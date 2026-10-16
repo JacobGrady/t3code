@@ -218,10 +218,12 @@ function RootRouteView() {
 
   const appShell = (
     <CommandPalette>
-      <AppSidebarLayout>
-        <Outlet />
-      </AppSidebarLayout>
-      <GlobalTerminal />
+      <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
+        <AppSidebarLayout>
+          <Outlet />
+        </AppSidebarLayout>
+        <GlobalTerminal />
+      </div>
     </CommandPalette>
   );
 

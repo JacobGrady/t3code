@@ -302,7 +302,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   return (
     <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
       <SidebarProvider
-        className="h-dvh! min-h-0!"
+        className="relative h-dvh! min-h-0! flex-1 overflow-hidden"
         data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
         defaultOpen
         style={sidebarProviderStyle}
@@ -312,6 +312,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         <Sidebar
           side="left"
           collapsible="offcanvas"
+          className="md:absolute! md:h-full!"
           data-app-sidebar=""
           role="navigation"
           aria-label={isOnSettings ? "Settings" : "Threads"}

@@ -167,7 +167,7 @@ export function GlobalTerminal() {
   return (
     <>
       {!open ? (
-        <div className="fixed bottom-3 right-3 z-40">
+        <div className="flex shrink-0 justify-end border-t border-border bg-background px-3 py-1">
           <Button variant="secondary" size="sm" onClick={toggle}>
             Global terminal
           </Button>
@@ -192,7 +192,7 @@ export function GlobalTerminal() {
           else if (command === "terminal.splitVertical") addTerminal("vertical");
         }}
         className={cn(
-          "fixed inset-x-0 bottom-0 z-40 max-h-[85vh] flex-col border-t border-border bg-background shadow-xl",
+          "min-h-0 shrink-0 flex-col border-t border-border bg-background",
           open ? "flex" : "hidden",
         )}
       >
@@ -239,16 +239,6 @@ export function GlobalTerminal() {
             onClick={restartShell}
           >
             {restarting ? "Restarting…" : "Restart shell"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              if (threadRef)
-                layoutStore.setTerminalHeight(threadRef, layout.terminalHeight > 400 ? 300 : 560);
-            }}
-          >
-            {layout.terminalHeight > 400 ? "Shrink" : "Expand"}
           </Button>
           <Button variant="ghost" size="sm" onClick={toggle}>
             Hide
