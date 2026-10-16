@@ -1,4 +1,23 @@
-# Terminal history
+# Terminals
+
+## Global terminal
+
+Choose **Open global terminal** in the command palette, or use the **Global
+terminal** launcher, to keep a shell available while switching threads, projects,
+or settings. Each environment has its own global shell; switching environments
+does not stop the shell on the previous one. Hide the panel to keep working without
+ending its sessions. The global panel supports the same new terminals, horizontal
+and vertical splits, terminal switching, resizing, shortcuts, and copy/paste menus
+as chat terminals. Its layout is saved separately for each environment. Closing a
+terminal stops that shell; hiding the panel does not. Use **Restart shell** to
+restart only the selected shell.
+
+The global shell starts in the environment server's working directory and does
+not follow the active project's directory. Use `cd` to change directories. It
+survives navigation and client reconnects while the environment server remains
+running, but does not survive that server restarting or the machine rebooting.
+
+## Terminal history
 
 Each terminal keeps up to 5,000 lines and 8 MiB of scrollback on its environment
 server. T3 Code removes the oldest output when either limit is reached. A long

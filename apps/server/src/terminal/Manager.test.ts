@@ -463,6 +463,27 @@ it.layer(
     }),
   );
 
+  it.effect("keeps a global shell alive across detach and unrelated thread cleanup", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const globalInput = openInput({
+        threadId: "t3code:global-terminal:v1",
+        terminalId: "global-1",
+      });
+      const detach = yield* manager.attachStream(globalInput, () => Effect.void);
+      const globalProcess = ptyAdapter.processes[0]!;
+      detach();
+      yield* manager.open(openInput());
+      yield* manager.close({ threadId: "thread-1", deleteHistory: true });
+      const reattach = yield* manager.attachStream(globalInput, () => Effect.void);
+      yield* Effect.addFinalizer(() => Effect.sync(reattach));
+      expect(globalProcess.killed).toBe(false);
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+      yield* manager.write({ ...globalInput, data: "pwd\r" });
+      expect(globalProcess.writes).toEqual(["pwd\r"]);
+    }),
+  );
+
   it.effect("keeps attach streams live when a terminal id is closed and reopened", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();

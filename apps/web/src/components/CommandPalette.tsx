@@ -77,6 +77,7 @@ import {
   SquarePenIcon,
   SunIcon,
   TextSearchIcon,
+  TerminalSquareIcon,
 } from "lucide-react";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import {
@@ -147,6 +148,7 @@ import {
 import { onOpenCommandPalette } from "../commandPaletteBus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
+import { useGlobalTerminalStore } from "../globalTerminalStore";
 import {
   PULL_REQUESTS_PANEL_REF,
   selectActiveRightPanel,
@@ -1767,6 +1769,15 @@ function OpenCommandPaletteDialog(props: {
   }, [clearOpenIntent, browseNavigation, openIntent, projectThreadItems, pushPaletteView]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+
+  actionItems.push({
+    kind: "action",
+    value: "action:global-terminal",
+    searchTerms: ["global terminal", "persistent shell", "terminal", "all projects"],
+    title: "Open global terminal",
+    icon: <TerminalSquareIcon className={ITEM_ICON_CLASS} />,
+    run: async () => useGlobalTerminalStore.getState().setOpen(true),
+  });
 
   if (projects.length > 0) {
     const activeProjectTitle =

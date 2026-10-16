@@ -5,6 +5,14 @@ client, including the desktop renderer, attaches through the environment connect
 This lets clients reconnect or share a running session. Renderer choices stay local
 to each client and do not change terminal contracts.
 
+The web/desktop global terminal uses the reserved owner key
+`t3code:global-terminal:v1` within each environment. It is not an orchestration
+thread and must not be tied to the active thread's
+launch location or cleanup. Existing terminal RPCs accept this owner without
+creating a project or conversation record.
+Its layout uses a separate instance of the chat terminal UI store so chat-thread
+orphan cleanup cannot remove global tabs or splits.
+
 ## Output and retention
 
 [Terminal history](../../apps/server/src/terminal/Manager.ts) is incremental.

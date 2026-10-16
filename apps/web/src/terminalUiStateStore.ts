@@ -574,200 +574,207 @@ interface TerminalUiStateStoreState {
   removeOrphanedTerminalUiStates: (activeThreadKeys: Set<string>) => void;
 }
 
-export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
-  persist(
-    (set, get) => {
-      const updateTerminal = (
-        threadRef: ScopedThreadRef,
-        updater: (
-          state: ThreadTerminalUiState,
-          suppressedTerminalIds: readonly string[],
-        ) => ThreadTerminalUiState,
-        suppression?: { terminalId: string; suppressed: boolean },
-      ) => {
-        set((state) => {
-          const threadKey = terminalThreadKey(threadRef);
-          const suppressedTerminalIds = state.suppressedTerminalIdsByThreadKey[threadKey] ?? [];
-          const nextTerminalUiStateByThreadKey = updateTerminalUiStateByThreadKey(
-            state.terminalUiStateByThreadKey,
-            threadRef,
-            (terminalState) => updater(terminalState, suppressedTerminalIds),
-          );
-          const nextSuppressedTerminalIdsByThreadKey = suppression
-            ? updateSuppressedTerminalId(
-                state.suppressedTerminalIdsByThreadKey,
-                threadRef,
-                suppression.terminalId,
-                suppression.suppressed,
-              )
-            : state.suppressedTerminalIdsByThreadKey;
-          if (
-            nextTerminalUiStateByThreadKey === state.terminalUiStateByThreadKey &&
-            nextSuppressedTerminalIdsByThreadKey === state.suppressedTerminalIdsByThreadKey
-          ) {
-            return state;
-          }
-          return {
-            terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
-            suppressedTerminalIdsByThreadKey: nextSuppressedTerminalIdsByThreadKey,
-          };
-        });
-      };
-
-      return {
-        terminalUiStateByThreadKey: {},
-        suppressedTerminalIdsByThreadKey: {},
-        setTerminalOpen: (threadRef, open) => {
-          const terminalState = selectThreadTerminalUiState(
-            get().terminalUiStateByThreadKey,
-            threadRef,
-          );
-          updateTerminal(
-            threadRef,
-            (state) => setThreadTerminalOpen(state, open),
-            open && terminalState.terminalIds.length === 0
-              ? { terminalId: DEFAULT_THREAD_TERMINAL_ID, suppressed: false }
-              : undefined,
-          );
-        },
-        setTerminalHeight: (threadRef, height) =>
-          updateTerminal(threadRef, (state) => setThreadTerminalHeight(state, height)),
-        splitTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId), {
-            terminalId,
-            suppressed: false,
-          }),
-        splitTerminalVertical: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId, "vertical"), {
-            terminalId,
-            suppressed: false,
-          }),
-        newTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => newThreadTerminal(state, terminalId), {
-            terminalId,
-            suppressed: false,
-          }),
-        ensureTerminal: (threadRef, terminalId, options) =>
-          updateTerminal(
-            threadRef,
-            (state) => {
-              let nextState = state;
-              if (!state.terminalIds.includes(terminalId)) {
-                nextState = newThreadTerminal(nextState, terminalId);
-              }
-              if (options?.active === false) {
-                nextState = {
-                  ...nextState,
-                  activeTerminalId: state.activeTerminalId,
-                  activeTerminalGroupId: state.activeTerminalGroupId,
-                };
-              }
-              if (options?.active ?? true) {
-                nextState = setThreadActiveTerminal(nextState, terminalId);
-              }
-              if (options?.open) {
-                nextState = setThreadTerminalOpen(nextState, true);
-              }
-              return normalizeThreadTerminalUiState(nextState);
-            },
-            { terminalId, suppressed: false },
-          ),
-        setActiveTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => setThreadActiveTerminal(state, terminalId)),
-        closeTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => closeThreadTerminal(state, terminalId), {
-            terminalId,
-            suppressed: true,
-          }),
-        reconcileTerminalIds: (threadRef, nextIds) =>
-          updateTerminal(threadRef, (state, suppressedTerminalIds) => {
-            if (suppressedTerminalIds.length === 0) {
-              return reconcileThreadTerminalSessionIds(state, nextIds);
-            }
-            const suppressedIds = new Set(suppressedTerminalIds);
-            return reconcileThreadTerminalSessionIds(
-              state,
-              nextIds.filter((terminalId) => !suppressedIds.has(terminalId)),
-            );
-          }),
-        clearTerminalUiState: (threadRef) =>
+export const createTerminalUiStateStore = (storageKey = TERMINAL_UI_STATE_STORAGE_KEY) =>
+  create<TerminalUiStateStoreState>()(
+    persist(
+      (set, get) => {
+        const updateTerminal = (
+          threadRef: ScopedThreadRef,
+          updater: (
+            state: ThreadTerminalUiState,
+            suppressedTerminalIds: readonly string[],
+          ) => ThreadTerminalUiState,
+          suppression?: { terminalId: string; suppressed: boolean },
+        ) => {
           set((state) => {
             const threadKey = terminalThreadKey(threadRef);
+            const suppressedTerminalIds = state.suppressedTerminalIdsByThreadKey[threadKey] ?? [];
             const nextTerminalUiStateByThreadKey = updateTerminalUiStateByThreadKey(
               state.terminalUiStateByThreadKey,
               threadRef,
-              () => createDefaultThreadTerminalUiState(),
+              (terminalState) => updater(terminalState, suppressedTerminalIds),
             );
-            const hadSuppressedTerminalIds =
-              state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
+            const nextSuppressedTerminalIdsByThreadKey = suppression
+              ? updateSuppressedTerminalId(
+                  state.suppressedTerminalIdsByThreadKey,
+                  threadRef,
+                  suppression.terminalId,
+                  suppression.suppressed,
+                )
+              : state.suppressedTerminalIdsByThreadKey;
             if (
               nextTerminalUiStateByThreadKey === state.terminalUiStateByThreadKey &&
-              !hadSuppressedTerminalIds
+              nextSuppressedTerminalIdsByThreadKey === state.suppressedTerminalIdsByThreadKey
             ) {
               return state;
             }
             return {
               terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
-              suppressedTerminalIdsByThreadKey: removeRecordEntry(
-                state.suppressedTerminalIdsByThreadKey,
-                threadKey,
-              ),
-            };
-          }),
-        removeTerminalUiState: (threadRef) =>
-          set((state) => {
-            const threadKey = terminalThreadKey(threadRef);
-            const hadTerminalUiState = state.terminalUiStateByThreadKey[threadKey] !== undefined;
-            const hadSuppressedTerminalIds =
-              state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
-            if (!hadTerminalUiState && !hadSuppressedTerminalIds) {
-              return state;
-            }
-            return {
-              terminalUiStateByThreadKey: removeRecordEntry(
-                state.terminalUiStateByThreadKey,
-                threadKey,
-              ),
-              suppressedTerminalIdsByThreadKey: removeRecordEntry(
-                state.suppressedTerminalIdsByThreadKey,
-                threadKey,
-              ),
-            };
-          }),
-        removeOrphanedTerminalUiStates: (activeThreadKeys) =>
-          set((state) => {
-            const orphanedIds = new Set(
-              [
-                ...Object.keys(state.terminalUiStateByThreadKey),
-                ...Object.keys(state.suppressedTerminalIdsByThreadKey),
-              ].filter((key) => !activeThreadKeys.has(key)),
-            );
-            if (orphanedIds.size === 0) {
-              return state;
-            }
-            const nextTerminalUiStateByThreadKey = { ...state.terminalUiStateByThreadKey };
-            const nextSuppressedTerminalIdsByThreadKey = {
-              ...state.suppressedTerminalIdsByThreadKey,
-            };
-            for (const id of orphanedIds) {
-              delete nextTerminalUiStateByThreadKey[id];
-              delete nextSuppressedTerminalIdsByThreadKey[id];
-            }
-            return {
-              terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
               suppressedTerminalIdsByThreadKey: nextSuppressedTerminalIdsByThreadKey,
             };
-          }),
-      };
-    },
-    {
-      name: TERMINAL_UI_STATE_STORAGE_KEY,
-      version: 4,
-      storage: createJSONStorage(createTerminalUiStateStorage),
-      migrate: migratePersistedTerminalUiStateStoreState,
-      partialize: (state) => ({
-        terminalUiStateByThreadKey: state.terminalUiStateByThreadKey,
-      }),
-    },
-  ),
-);
+          });
+        };
+
+        return {
+          terminalUiStateByThreadKey: {},
+          suppressedTerminalIdsByThreadKey: {},
+          setTerminalOpen: (threadRef, open) => {
+            const terminalState = selectThreadTerminalUiState(
+              get().terminalUiStateByThreadKey,
+              threadRef,
+            );
+            updateTerminal(
+              threadRef,
+              (state) => setThreadTerminalOpen(state, open),
+              open && terminalState.terminalIds.length === 0
+                ? { terminalId: DEFAULT_THREAD_TERMINAL_ID, suppressed: false }
+                : undefined,
+            );
+          },
+          setTerminalHeight: (threadRef, height) =>
+            updateTerminal(threadRef, (state) => setThreadTerminalHeight(state, height)),
+          splitTerminal: (threadRef, terminalId) =>
+            updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId), {
+              terminalId,
+              suppressed: false,
+            }),
+          splitTerminalVertical: (threadRef, terminalId) =>
+            updateTerminal(
+              threadRef,
+              (state) => splitThreadTerminal(state, terminalId, "vertical"),
+              {
+                terminalId,
+                suppressed: false,
+              },
+            ),
+          newTerminal: (threadRef, terminalId) =>
+            updateTerminal(threadRef, (state) => newThreadTerminal(state, terminalId), {
+              terminalId,
+              suppressed: false,
+            }),
+          ensureTerminal: (threadRef, terminalId, options) =>
+            updateTerminal(
+              threadRef,
+              (state) => {
+                let nextState = state;
+                if (!state.terminalIds.includes(terminalId)) {
+                  nextState = newThreadTerminal(nextState, terminalId);
+                }
+                if (options?.active === false) {
+                  nextState = {
+                    ...nextState,
+                    activeTerminalId: state.activeTerminalId,
+                    activeTerminalGroupId: state.activeTerminalGroupId,
+                  };
+                }
+                if (options?.active ?? true) {
+                  nextState = setThreadActiveTerminal(nextState, terminalId);
+                }
+                if (options?.open) {
+                  nextState = setThreadTerminalOpen(nextState, true);
+                }
+                return normalizeThreadTerminalUiState(nextState);
+              },
+              { terminalId, suppressed: false },
+            ),
+          setActiveTerminal: (threadRef, terminalId) =>
+            updateTerminal(threadRef, (state) => setThreadActiveTerminal(state, terminalId)),
+          closeTerminal: (threadRef, terminalId) =>
+            updateTerminal(threadRef, (state) => closeThreadTerminal(state, terminalId), {
+              terminalId,
+              suppressed: true,
+            }),
+          reconcileTerminalIds: (threadRef, nextIds) =>
+            updateTerminal(threadRef, (state, suppressedTerminalIds) => {
+              if (suppressedTerminalIds.length === 0) {
+                return reconcileThreadTerminalSessionIds(state, nextIds);
+              }
+              const suppressedIds = new Set(suppressedTerminalIds);
+              return reconcileThreadTerminalSessionIds(
+                state,
+                nextIds.filter((terminalId) => !suppressedIds.has(terminalId)),
+              );
+            }),
+          clearTerminalUiState: (threadRef) =>
+            set((state) => {
+              const threadKey = terminalThreadKey(threadRef);
+              const nextTerminalUiStateByThreadKey = updateTerminalUiStateByThreadKey(
+                state.terminalUiStateByThreadKey,
+                threadRef,
+                () => createDefaultThreadTerminalUiState(),
+              );
+              const hadSuppressedTerminalIds =
+                state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
+              if (
+                nextTerminalUiStateByThreadKey === state.terminalUiStateByThreadKey &&
+                !hadSuppressedTerminalIds
+              ) {
+                return state;
+              }
+              return {
+                terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
+                suppressedTerminalIdsByThreadKey: removeRecordEntry(
+                  state.suppressedTerminalIdsByThreadKey,
+                  threadKey,
+                ),
+              };
+            }),
+          removeTerminalUiState: (threadRef) =>
+            set((state) => {
+              const threadKey = terminalThreadKey(threadRef);
+              const hadTerminalUiState = state.terminalUiStateByThreadKey[threadKey] !== undefined;
+              const hadSuppressedTerminalIds =
+                state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
+              if (!hadTerminalUiState && !hadSuppressedTerminalIds) {
+                return state;
+              }
+              return {
+                terminalUiStateByThreadKey: removeRecordEntry(
+                  state.terminalUiStateByThreadKey,
+                  threadKey,
+                ),
+                suppressedTerminalIdsByThreadKey: removeRecordEntry(
+                  state.suppressedTerminalIdsByThreadKey,
+                  threadKey,
+                ),
+              };
+            }),
+          removeOrphanedTerminalUiStates: (activeThreadKeys) =>
+            set((state) => {
+              const orphanedIds = new Set(
+                [
+                  ...Object.keys(state.terminalUiStateByThreadKey),
+                  ...Object.keys(state.suppressedTerminalIdsByThreadKey),
+                ].filter((key) => !activeThreadKeys.has(key)),
+              );
+              if (orphanedIds.size === 0) {
+                return state;
+              }
+              const nextTerminalUiStateByThreadKey = { ...state.terminalUiStateByThreadKey };
+              const nextSuppressedTerminalIdsByThreadKey = {
+                ...state.suppressedTerminalIdsByThreadKey,
+              };
+              for (const id of orphanedIds) {
+                delete nextTerminalUiStateByThreadKey[id];
+                delete nextSuppressedTerminalIdsByThreadKey[id];
+              }
+              return {
+                terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
+                suppressedTerminalIdsByThreadKey: nextSuppressedTerminalIdsByThreadKey,
+              };
+            }),
+        };
+      },
+      {
+        name: storageKey,
+        version: 4,
+        storage: createJSONStorage(createTerminalUiStateStorage),
+        migrate: migratePersistedTerminalUiStateStoreState,
+        partialize: (state) => ({
+          terminalUiStateByThreadKey: state.terminalUiStateByThreadKey,
+        }),
+      },
+    ),
+  );
+
+export const useTerminalUiStateStore = createTerminalUiStateStore();

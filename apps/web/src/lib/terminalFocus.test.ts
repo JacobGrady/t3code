@@ -41,6 +41,17 @@ afterEach(() => {
 });
 
 describe("isTerminalFocused", () => {
+  it("recognizes the global terminal independently of the active thread", () => {
+    const attached = new MockHTMLElement();
+    attached.isConnected = true;
+    attached.terminalOwner = "global";
+    attached.dataset.terminalOwner = "global";
+    globalThis.HTMLElement = MockHTMLElement as unknown as typeof HTMLElement;
+    globalThis.document = { activeElement: attached } as unknown as Document;
+    expect(getTerminalFocusOwner()).toBe("global");
+    expect(isTerminalFocused()).toBe(true);
+  });
+
   it("returns false for detached xterm helper textareas", () => {
     const detached = new MockHTMLElement();
     detached.className = "xterm-helper-textarea";
