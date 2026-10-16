@@ -1,4 +1,4 @@
-import { act, type ComponentProps, type KeyboardEvent } from "react";
+import { act, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { EnvironmentId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -25,6 +25,11 @@ vi.mock("../keybindings", async (importOriginal) => ({
   resolveShortcutCommand: () => testState.command,
 }));
 vi.mock("../hooks/useLocalStorage", () => ({ useLocalStorage: () => [false, vi.fn()] }));
+vi.mock("./ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ render }: { render: ReactNode }) => render,
+  TooltipPopup: () => null,
+}));
 vi.mock("../state/environments", () => ({
   usePrimaryEnvironmentId: () => "local",
   useEnvironments: () => ({
@@ -180,7 +185,7 @@ describe("GlobalTerminal", () => {
     expect(drawerProps().terminalIds).toEqual(["global-1", "term-1"]);
     const restartButton = renderer!.root
       .findAllByType(Button)
-      .find((button) => button.props.children === "Restart shell")!;
+      .find((button) => button.props["aria-label"] === "Restart terminal")!;
     await act(async () => {
       await restartButton.props.onClick?.({} as never);
     });
@@ -296,7 +301,7 @@ describe("GlobalTerminal", () => {
     await act(async () => renderer?.update(<GlobalTerminal />));
     const restartButton = renderer!.root
       .findAllByType(Button)
-      .find((button) => button.props.children === "Restart shell")!;
+      .find((button) => button.props["aria-label"] === "Restart terminal")!;
     expect(restartButton.props.disabled).toBe(true);
     await act(async () => {
       await restartButton.props.onClick?.({} as never);

@@ -3,6 +3,7 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import { EnvironmentId } from "@t3tools/contracts";
 import { mergeWithDefaultKeybindings } from "@t3tools/shared/keybindings";
 import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+import { ChevronDownIcon, TerminalSquareIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
@@ -23,6 +24,8 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { selectThreadTerminalUiState } from "../terminalUiStateStore";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { Button } from "./ui/button";
+import { RefreshIcon } from "./ui/refresh-icon";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 
 export function GlobalTerminal() {
@@ -171,9 +174,21 @@ export function GlobalTerminal() {
     <>
       {!open ? (
         <div className="flex shrink-0 justify-end border-t border-border bg-background px-3 py-1">
-          <Button variant="secondary" size="sm" onClick={toggle}>
-            Global terminal
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Open global terminal"
+                  onClick={toggle}
+                >
+                  <TerminalSquareIcon aria-hidden />
+                </Button>
+              }
+            />
+            <TooltipPopup>Open global terminal</TooltipPopup>
+          </Tooltip>
         </div>
       ) : null}
       <section
@@ -200,7 +215,6 @@ export function GlobalTerminal() {
         )}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1">
-          <span className="text-sm font-medium">Global terminal</span>
           <Select
             value={environmentId}
             items={environments.map((environment) => ({
@@ -235,17 +249,40 @@ export function GlobalTerminal() {
             </SelectPopup>
           </Select>
           <div className="flex-1" />
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!config || !layout.activeTerminalId || restarting || !canOperateTerminal}
-            onClick={restartShell}
-          >
-            {restarting ? "Restarting…" : "Restart shell"}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={toggle}>
-            Hide
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Restart terminal"
+                  aria-busy={restarting}
+                  disabled={
+                    !config || !layout.activeTerminalId || restarting || !canOperateTerminal
+                  }
+                  onClick={restartShell}
+                >
+                  <RefreshIcon refreshing={restarting} />
+                </Button>
+              }
+            />
+            <TooltipPopup>{restarting ? "Restarting terminal…" : "Restart terminal"}</TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Hide global terminal"
+                  onClick={toggle}
+                >
+                  <ChevronDownIcon aria-hidden />
+                </Button>
+              }
+            />
+            <TooltipPopup>Hide global terminal</TooltipPopup>
+          </Tooltip>
         </div>
         {error ? (
           <p role="alert" className="px-3 text-sm text-destructive">
