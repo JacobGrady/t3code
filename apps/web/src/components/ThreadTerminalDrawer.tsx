@@ -104,9 +104,13 @@ function maxDrawerHeight(): number {
   return Math.max(MIN_DRAWER_HEIGHT, Math.floor(window.innerHeight * MAX_DRAWER_HEIGHT_RATIO));
 }
 
-function clampDrawerHeight(height: number, maxHeight = maxDrawerHeight()): number {
+function clampDrawerHeight(
+  height: number,
+  minHeight = MIN_DRAWER_HEIGHT,
+  maxHeight = maxDrawerHeight(),
+): number {
   const safeHeight = Number.isFinite(height) ? height : DEFAULT_THREAD_TERMINAL_HEIGHT;
-  return Math.min(Math.max(Math.round(safeHeight), MIN_DRAWER_HEIGHT), maxHeight);
+  return Math.min(Math.max(Math.round(safeHeight), minHeight), maxHeight);
 }
 
 function writeSystemMessage(terminal: GhosttyTerminalSurface, message: string): void {
@@ -1102,6 +1106,7 @@ interface ThreadTerminalDrawerProps {
   runtimeEnv?: Record<string, string>;
   visible?: boolean;
   height: number;
+  minHeight?: number;
   terminalIds: string[];
   activeTerminalId: string;
   terminalGroups: ThreadTerminalGroup[];
@@ -1178,6 +1183,7 @@ export default function ThreadTerminalDrawer({
   runtimeEnv,
   visible = true,
   height,
+  minHeight = MIN_DRAWER_HEIGHT,
   terminalIds,
   activeTerminalId,
   terminalGroups,
@@ -1213,7 +1219,7 @@ export default function ThreadTerminalDrawer({
   }));
   const preferredDrawerHeight =
     drawerHeightState.threadId === threadId ? drawerHeightState.height : controlledDrawerHeight;
-  const drawerHeight = clampDrawerHeight(preferredDrawerHeight, windowMaxDrawerHeight);
+  const drawerHeight = clampDrawerHeight(preferredDrawerHeight, minHeight, windowMaxDrawerHeight);
   const setDrawerHeight = useCallback(
     (update: SetStateAction<number>) => {
       setDrawerHeightState((current) => {
@@ -1455,20 +1461,24 @@ export default function ThreadTerminalDrawer({
     };
   }, []);
 
-  const handleResizePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const resizeState = resizeStateRef.current;
-    if (!resizeState || resizeState.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    const clampedHeight = clampDrawerHeight(
-      resizeState.startHeight + (resizeState.startY - event.clientY),
-    );
-    if (clampedHeight === drawerHeightRef.current) {
-      return;
-    }
-    didResizeDuringDragRef.current = true;
-    drawerHeightRef.current = clampedHeight;
-    resizeState.drawer?.style.setProperty("height", `${clampedHeight}px`);
-  }, []);
+  const handleResizePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const resizeState = resizeStateRef.current;
+      if (!resizeState || resizeState.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      const clampedHeight = clampDrawerHeight(
+        resizeState.startHeight + (resizeState.startY - event.clientY),
+        minHeight,
+      );
+      if (clampedHeight === drawerHeightRef.current) {
+        return;
+      }
+      didResizeDuringDragRef.current = true;
+      drawerHeightRef.current = clampedHeight;
+      resizeState.drawer?.style.setProperty("height", `${clampedHeight}px`);
+    },
+    [minHeight],
+  );
 
   const handleResizePointerEnd = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1483,7 +1493,7 @@ export default function ThreadTerminalDrawer({
       if (!didResizeDuringDragRef.current || drawerHeightRef.current === resizeState.startHeight) {
         // React skips the write when the rendered height did not change, so put
         // back the preference as the current window caps it.
-        const renderedHeight = clampDrawerHeight(preferredDrawerHeightRef.current);
+        const renderedHeight = clampDrawerHeight(preferredDrawerHeightRef.current, minHeight);
         drawerHeightRef.current = renderedHeight;
         resizeState.drawer?.style.setProperty("height", `${renderedHeight}px`);
         return;
@@ -1492,7 +1502,7 @@ export default function ThreadTerminalDrawer({
       syncHeight(drawerHeightRef.current);
       setResizeEpoch((value) => value + 1);
     },
-    [setDrawerHeight, syncHeight],
+    [minHeight, setDrawerHeight, syncHeight],
   );
 
   useEffect(() => {
@@ -1502,7 +1512,7 @@ export default function ThreadTerminalDrawer({
 
     const onWindowResize = () => {
       const resizeState = resizeStateRef.current;
-      const liveHeight = clampDrawerHeight(drawerHeightRef.current);
+      const liveHeight = clampDrawerHeight(drawerHeightRef.current, minHeight);
       if (resizeState && liveHeight !== drawerHeightRef.current) {
         drawerHeightRef.current = liveHeight;
         resizeState.drawer?.style.setProperty("height", `${liveHeight}px`);
@@ -1514,7 +1524,7 @@ export default function ThreadTerminalDrawer({
     return () => {
       window.removeEventListener("resize", onWindowResize);
     };
-  }, [visible]);
+  }, [minHeight, visible]);
 
   useEffect(() => {
     if (!visible) {

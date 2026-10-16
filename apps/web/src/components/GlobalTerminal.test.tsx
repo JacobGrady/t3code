@@ -1,6 +1,7 @@
 import { act, type ComponentProps, type KeyboardEvent } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { EnvironmentId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const testState = vi.hoisted(() => ({
@@ -58,7 +59,11 @@ vi.mock("./ThreadTerminalDrawer", async () => {
   };
 });
 
-import { useGlobalTerminalStore, useGlobalTerminalLayoutStore } from "../globalTerminalStore";
+import {
+  GLOBAL_TERMINAL_OWNER_ID,
+  useGlobalTerminalStore,
+  useGlobalTerminalLayoutStore,
+} from "../globalTerminalStore";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { GlobalTerminal } from "./GlobalTerminal";
 import { Button } from "./ui/button";
@@ -90,6 +95,7 @@ beforeEach(() => {
     environmentId: null,
     launchDirectories: {},
     initializedEnvironments: {},
+    terminalHeights: {},
   });
 });
 
@@ -100,6 +106,38 @@ afterEach(async () => {
 });
 
 describe("GlobalTerminal", () => {
+  it("starts compact with existing splits and remembers resized heights per environment", async () => {
+    const local = EnvironmentId.make("local");
+    const remote = EnvironmentId.make("remote");
+    useGlobalTerminalStore.getState().selectEnvironment(local, "/original");
+    useGlobalTerminalStore.getState().markInitialized(local);
+    useGlobalTerminalStore.getState().setOpen(true);
+    const threadRef = scopeThreadRef(local, GLOBAL_TERMINAL_OWNER_ID);
+    useGlobalTerminalLayoutStore.getState().ensureTerminal(threadRef, "global-1");
+    useGlobalTerminalLayoutStore.getState().splitTerminal(threadRef, "term-1");
+    useGlobalTerminalLayoutStore.getState().setTerminalHeight(threadRef, 560);
+    await act(async () => {
+      renderer = create(<GlobalTerminal />);
+    });
+    expect(drawerProps().height).toBe(100);
+    expect(drawerProps().terminalIds).toEqual(["global-1", "term-1"]);
+    await act(async () => drawerProps().onHeightChange(240));
+    await act(async () => useGlobalTerminalStore.getState().setOpen(false));
+    await act(async () => useGlobalTerminalStore.getState().setOpen(true));
+    expect(drawerProps().height).toBe(240);
+    await act(async () => useGlobalTerminalStore.getState().selectEnvironment(remote, "/remote"));
+    expect(drawerProps().height).toBe(100);
+    await act(async () => drawerProps().onHeightChange(160));
+    await act(async () => useGlobalTerminalStore.getState().selectEnvironment(local, "/original"));
+    expect(drawerProps().height).toBe(240);
+    expect(drawerProps().terminalIds).toEqual(["global-1", "term-1"]);
+    await act(async () => renderer?.unmount());
+    await act(async () => {
+      renderer = create(<GlobalTerminal />);
+    });
+    expect(drawerProps().height).toBe(240);
+  });
+
   it("routes terminal shortcuts to the global layout, not the active chat", async () => {
     const chatLayout = useTerminalUiStateStore.getState().terminalUiStateByThreadKey;
     useGlobalTerminalStore.getState().setOpen(true);

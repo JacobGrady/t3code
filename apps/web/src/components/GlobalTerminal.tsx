@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import {
+  DEFAULT_GLOBAL_TERMINAL_HEIGHT,
   GLOBAL_TERMINAL_ID,
   GLOBAL_TERMINAL_OWNER_ID,
   useGlobalTerminalLayoutStore,
@@ -30,6 +31,8 @@ export function GlobalTerminal() {
     environmentId,
     launchDirectories,
     initializedEnvironments,
+    terminalHeights,
+    setTerminalHeight,
     markInitialized,
     setOpen,
     selectEnvironment,
@@ -259,7 +262,8 @@ export function GlobalTerminal() {
             cwd={cwd}
             worktreePath={null}
             visible={open}
-            height={layout.terminalHeight}
+            height={terminalHeights[threadRef.environmentId] ?? DEFAULT_GLOBAL_TERMINAL_HEIGHT}
+            minHeight={DEFAULT_GLOBAL_TERMINAL_HEIGHT}
             terminalIds={layout.terminalIds}
             activeTerminalId={layout.activeTerminalId}
             terminalGroups={layout.terminalGroups}
@@ -287,7 +291,7 @@ export function GlobalTerminal() {
             onCloseTerminal={(terminalId) => {
               void closeTerminal(terminalId, false);
             }}
-            onHeightChange={(height) => layoutStore.setTerminalHeight(threadRef, height)}
+            onHeightChange={(height) => setTerminalHeight(threadRef.environmentId, height)}
             keybindings={keybindings}
             terminalLabelsById={labels}
           />
