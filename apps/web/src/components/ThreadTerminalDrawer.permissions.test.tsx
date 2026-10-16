@@ -149,3 +149,39 @@ it("rechecks the target terminal grant when a retained surface callback reports 
     input: { threadId: threadRef.threadId, terminalId: "terminal-1", cols: 100, rows: 30 },
   });
 });
+
+it("uses the latest URL handler without recreating the shell surface on navigation", async () => {
+  const firstOpenUrl = vi.fn();
+  const nextOpenUrl = vi.fn();
+  const viewport = (onOpenUrl: (url: string) => void) => (
+    <TerminalViewport
+      advancedTypography={false}
+      threadRef={threadRef}
+      threadId={threadRef.threadId}
+      terminalId="terminal-1"
+      terminalLabel="Terminal 1"
+      cwd="/repo"
+      onSessionExited={state.otherCommand}
+      onOpenUrl={onOpenUrl}
+      focusRequestId={0}
+      autoFocus={false}
+      visible={true}
+      resizeEpoch={0}
+      drawerHeight={200}
+      keybindings={[]}
+    />
+  );
+  await act(async () => {
+    renderer = create(viewport(firstOpenUrl), {
+      createNodeMock: () => ({ closest: () => null, contains: () => false }),
+    });
+  });
+  const activate = state.createSurface.mock.calls[0]![1].onLinkActivate;
+  activate("http://localhost:3000/", {} as MouseEvent);
+  expect(firstOpenUrl).toHaveBeenCalledExactlyOnceWith("http://localhost:3000/");
+  await act(async () => renderer!.update(viewport(nextOpenUrl)));
+  activate("http://localhost:4000/", {} as MouseEvent);
+  expect(state.createSurface).toHaveBeenCalledTimes(1);
+  expect(firstOpenUrl).toHaveBeenCalledTimes(1);
+  expect(nextOpenUrl).toHaveBeenCalledExactlyOnceWith("http://localhost:4000/");
+});

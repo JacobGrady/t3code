@@ -12,6 +12,13 @@ launch location or cleanup. Existing terminal RPCs accept this owner without
 creating a project or conversation record.
 Its layout uses a separate instance of the chat terminal UI store so chat-thread
 orphan cleanup cannot remove global tabs or splits.
+Port discovery retains that owner key; the global dock filters the selected
+environment's discovery results rather than attributing servers to a chat.
+Opening a remote loopback link uses a real, currently viewed thread in the same
+environment as the preview owner and explicitly requests the server runtime.
+Unavailable or failed remote previews must not fall back to client loopback.
+URL handlers are read through an effect event so changing the viewed thread does
+not recreate the terminal surface or change its launch inputs.
 
 ## Output and retention
 

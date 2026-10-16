@@ -376,7 +376,7 @@ export function shouldHandleTerminalExit(
 
 interface TerminalViewportProps {
   advancedTypography: boolean;
-  linksInBrowser?: boolean;
+  onOpenUrl?: ((url: string) => void) | undefined;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
   terminalId: string;
@@ -403,7 +403,7 @@ interface TerminalLaunchLocation {
 
 export function TerminalViewport({
   advancedTypography,
-  linksInBrowser = false,
+  onOpenUrl,
   threadRef,
   threadId,
   terminalId,
@@ -462,7 +462,11 @@ export function TerminalViewport({
   });
   const canAddSelectionToChat = useEffectEvent(() => onAddTerminalContext !== undefined);
   const readTerminalLabel = useEffectEvent(() => terminalLabel);
-  const openLinksInBrowser = useEffectEvent(() => linksInBrowser);
+  const openUrl = useEffectEvent((url: string) => {
+    if (!onOpenUrl) return false;
+    onOpenUrl(url);
+    return true;
+  });
   const terminalFontFamily = useClientSettings((settings) =>
     resolveTerminalFontPreference({
       advanced: advancedTypography,
@@ -889,6 +893,7 @@ export function TerminalViewport({
 
       function handleLinkActivate(text: string, event: MouseEvent): void {
         if (!canActivateTerminalLink(text)) return;
+        if (isTerminalUrl(text) && openUrl(text)) return;
         const latestTerminal = terminalRef.current;
         if (!latestTerminal) return;
         if (isTerminalUrl(text)) {
@@ -913,7 +918,7 @@ export function TerminalViewport({
             threadRef,
             openPreview,
             fallbackToBrowser,
-            forceBrowser: openLinksInBrowser() || event.metaKey || event.ctrlKey,
+            forceBrowser: event.metaKey || event.ctrlKey,
           }).catch((error: unknown) => {
             toastManager.add(
               stackedThreadToast({
@@ -1098,7 +1103,7 @@ export function TerminalViewport({
 interface ThreadTerminalDrawerProps {
   mode?: "drawer" | "panel";
   focusOwner?: "drawer" | "right-panel" | "global";
-  linksInBrowser?: boolean;
+  onOpenUrl?: ((url: string) => void) | undefined;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
   cwd: string;
@@ -1175,7 +1180,7 @@ function TerminalActionButton({
 export default function ThreadTerminalDrawer({
   mode = "drawer",
   focusOwner,
-  linksInBrowser = false,
+  onOpenUrl,
   threadRef,
   threadId,
   cwd,
@@ -1692,7 +1697,7 @@ export default function ThreadTerminalDrawer({
                     >
                       <div className="h-full">
                         <TerminalViewport
-                          linksInBrowser={linksInBrowser}
+                          onOpenUrl={onOpenUrl}
                           advancedTypography={advancedTypography}
                           threadRef={threadRef}
                           threadId={threadId}
@@ -1722,7 +1727,7 @@ export default function ThreadTerminalDrawer({
             ) : (
               <div className="h-full">
                 <TerminalViewport
-                  linksInBrowser={linksInBrowser}
+                  onOpenUrl={onOpenUrl}
                   advancedTypography={advancedTypography}
                   key={resolvedActiveTerminalId}
                   threadRef={threadRef}

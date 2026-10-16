@@ -1,6 +1,6 @@
 import { act, type ComponentProps, type KeyboardEvent, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type DiscoveredLocalServer } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -10,6 +10,10 @@ const testState = vi.hoisted(() => ({
   restart: vi.fn(),
   close: vi.fn(),
   confirmClose: vi.fn(),
+  confirmRestart: vi.fn(),
+  openLink: vi.fn(),
+  route: {} as { environmentId?: string; threadId?: string },
+  servers: new Map<string, DiscoveredLocalServer[]>(),
   command: null as string | null,
   canOperate: true,
   configs: new Map([
@@ -19,6 +23,22 @@ const testState = vi.hoisted(() => ({
 }));
 
 vi.mock("../state/entities", () => ({ useServerConfigs: () => testState.configs }));
+vi.mock("@tanstack/react-router", () => ({
+  useParams: ({ select }: { select: (params: typeof testState.route) => unknown }) =>
+    select(testState.route),
+}));
+vi.mock("../state/preview", () => ({
+  previewEnvironment: {
+    open: "preview",
+    discoveredServers: ({ environmentId }: { environmentId: string }) => environmentId,
+  },
+}));
+vi.mock("../state/query", () => ({
+  useEnvironmentQuery: (environmentId: string | null) => ({
+    data: { servers: testState.servers.get(environmentId ?? "") ?? [] },
+  }),
+}));
+vi.mock("./preview/openGlobalTerminalLink", () => ({ openGlobalTerminalLink: testState.openLink }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => testState.canOperate }));
 vi.mock("../keybindings", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../keybindings")>()),
@@ -45,6 +65,9 @@ vi.mock("../state/terminal", () => ({
 vi.mock("../state/terminalSessions", () => ({ useKnownTerminalSessions: () => null }));
 vi.mock("../lib/terminalCloseConfirm", () => ({
   confirmTerminalClose: (...args: unknown[]) => testState.confirmClose(...args),
+}));
+vi.mock("../localApi", () => ({
+  readLocalApi: () => ({ dialogs: { confirm: testState.confirmRestart } }),
 }));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: string) => (command === "close" ? testState.close : testState.restart),
@@ -91,6 +114,10 @@ beforeEach(() => {
   testState.restart.mockReset().mockResolvedValue({ _tag: "Success" });
   testState.close.mockReset().mockResolvedValue({ _tag: "Success" });
   testState.confirmClose.mockReset().mockResolvedValue(true);
+  testState.confirmRestart.mockReset().mockResolvedValue(true);
+  testState.openLink.mockReset().mockResolvedValue(undefined);
+  testState.route = {};
+  testState.servers.clear();
   useGlobalTerminalLayoutStore.setState({
     terminalUiStateByThreadKey: {},
     suppressedTerminalIdsByThreadKey: {},
@@ -111,6 +138,159 @@ afterEach(async () => {
 });
 
 describe("GlobalTerminal", () => {
+  it("shows only the selected environment's global-owned servers and reports opening failures", async () => {
+    const server = (port: number, threadId = GLOBAL_TERMINAL_OWNER_ID): DiscoveredLocalServer => ({
+      host: "localhost",
+      port,
+      url: `http://localhost:${port}/`,
+      processName: "node",
+      pid: port,
+      terminal: { threadId, terminalId: "global-1" },
+    });
+    testState.servers.set("local", [
+      server(3000),
+      server(3001, "chat-1" as typeof GLOBAL_TERMINAL_OWNER_ID),
+    ]);
+    testState.servers.set("remote", [server(4000)]);
+    useGlobalTerminalStore.getState().setOpen(true);
+    await act(async () => {
+      renderer = create(<GlobalTerminal />);
+    });
+    const serverButtons = () =>
+      renderer!.root.findByProps({ "aria-label": "Global terminal servers" }).findAllByType(Button);
+    expect(serverButtons()).toHaveLength(1);
+    expect(serverButtons()[0]!.props.children).toContain("http://localhost:3000/");
+    testState.openLink.mockRejectedValueOnce(new Error("Open a chat in this environment"));
+    await act(async () => serverButtons()[0]!.props.onClick());
+    expect(renderer!.root.findByProps({ role: "alert" }).children.join("")).toBe(
+      "Open a chat in this environment",
+    );
+    await act(async () =>
+      useGlobalTerminalStore.getState().selectEnvironment(EnvironmentId.make("remote"), "/remote"),
+    );
+    expect(serverButtons()).toHaveLength(1);
+    expect(serverButtons()[0]!.props.children).toContain("http://localhost:4000/");
+  });
+
+  it("retains its viewport and launch inputs while the viewed chat or its metadata changes", async () => {
+    useGlobalTerminalStore.getState().setOpen(true);
+    testState.route = { environmentId: "local", threadId: "chat-1" };
+    await act(async () => {
+      renderer = create(<GlobalTerminal />);
+    });
+    const originalRef = drawerProps().threadRef;
+    const originalCwd = drawerProps().cwd;
+    await act(async () => drawerProps().onSplitTerminal());
+    testState.route = { environmentId: "remote", threadId: "chat-2" };
+    testState.configs.set("local", { cwd: "/changed-project", keybindings: [] });
+    try {
+      await act(async () => renderer?.update(<GlobalTerminal />));
+      expect(testState.mounts).toBe(1);
+      expect(testState.unmounts).toBe(0);
+      expect(drawerProps().threadRef).toBe(originalRef);
+      expect(drawerProps().cwd).toBe(originalCwd);
+      expect(drawerProps().runtimeEnv).toBeUndefined();
+      expect(drawerProps().terminalIds).toEqual(["global-1", "term-1"]);
+      testState.route = {};
+      await act(async () => renderer?.update(<GlobalTerminal />));
+      expect(testState.unmounts).toBe(0);
+      expect(drawerProps().cwd).toBe(originalCwd);
+    } finally {
+      testState.configs.set("local", { cwd: "/original", keybindings: [] });
+    }
+  });
+
+  it.each([false, true])(
+    "does not attach a saved environment while hidden (initialized: %s)",
+    async (initialized) => {
+      const environmentId = EnvironmentId.make("local");
+      useGlobalTerminalStore.getState().selectEnvironment(environmentId, "/original");
+      if (initialized) {
+        useGlobalTerminalStore.getState().markInitialized(environmentId);
+        useGlobalTerminalLayoutStore
+          .getState()
+          .ensureTerminal(scopeThreadRef(environmentId, GLOBAL_TERMINAL_OWNER_ID), "global-1");
+      }
+      await act(async () => {
+        renderer = create(<GlobalTerminal />);
+      });
+      expect(testState.mounts).toBe(0);
+      expect(useGlobalTerminalStore.getState().initializedEnvironments.local).toBe(
+        initialized ? true : undefined,
+      );
+      await act(async () => useGlobalTerminalStore.getState().setOpen(true));
+      expect(testState.mounts).toBe(1);
+      expect(drawerProps().terminalIds).toEqual(["global-1"]);
+      await act(async () => useGlobalTerminalStore.getState().setOpen(false));
+      expect(testState.unmounts).toBe(0);
+    },
+  );
+
+  it("waits for the app dialog before restarting only the selected shell", async () => {
+    useGlobalTerminalStore.getState().setOpen(true);
+    await act(async () => {
+      renderer = create(<GlobalTerminal />);
+    });
+    await act(async () => drawerProps().onSplitTerminal());
+    let resolveConfirmation!: (confirmed: boolean) => void;
+    const confirmation = new Promise<boolean>((resolve) => {
+      resolveConfirmation = resolve;
+    });
+    testState.confirmRestart.mockReturnValueOnce(confirmation);
+    const restartButton = () =>
+      renderer!.root
+        .findAllByType(Button)
+        .find((button) => button.props["aria-label"] === "Restart terminal")!;
+    let restartRequest: Promise<void> | undefined;
+    await act(async () => {
+      restartRequest = restartButton().props.onClick();
+    });
+    expect(restartButton().props.disabled).toBe(true);
+    expect(testState.restart).not.toHaveBeenCalled();
+    expect(testState.confirmRestart).toHaveBeenCalledWith(
+      "Restart the selected global terminal? Its running commands will stop.",
+      { variant: "destructive" },
+    );
+    await act(async () => {
+      resolveConfirmation(false);
+      await restartRequest;
+    });
+    expect(testState.restart).not.toHaveBeenCalled();
+    expect(restartButton().props.disabled).toBe(false);
+    await act(async () => restartButton().props.onClick());
+    expect(testState.restart).toHaveBeenCalledExactlyOnceWith({
+      environmentId: "local",
+      input: {
+        threadId: GLOBAL_TERMINAL_OWNER_ID,
+        terminalId: "term-1",
+        cwd: "/original",
+        worktreePath: null,
+        cols: 100,
+        rows: 24,
+      },
+    });
+    expect(drawerProps().terminalIds).toEqual(["global-1", "term-1"]);
+  });
+
+  it("keeps the shell and releases restart controls if confirmation fails", async () => {
+    useGlobalTerminalStore.getState().setOpen(true);
+    await act(async () => {
+      renderer = create(<GlobalTerminal />);
+    });
+    testState.confirmRestart.mockRejectedValueOnce(new Error("Dialog unavailable"));
+    const restartButton = () =>
+      renderer!.root
+        .findAllByType(Button)
+        .find((button) => button.props["aria-label"] === "Restart terminal")!;
+    await act(async () => restartButton().props.onClick());
+    expect(testState.restart).not.toHaveBeenCalled();
+    expect(restartButton().props.disabled).toBe(false);
+    expect(drawerProps().terminalIds).toEqual(["global-1"]);
+    expect(renderer!.root.findByProps({ role: "alert" }).children.join("")).toContain(
+      "Could not restart",
+    );
+  });
+
   it("starts compact with existing splits and remembers resized heights per environment", async () => {
     const local = EnvironmentId.make("local");
     const remote = EnvironmentId.make("remote");
@@ -211,7 +391,6 @@ describe("GlobalTerminal", () => {
     expect(drawerProps()).toMatchObject({
       terminalIds: ["global-1"],
       focusOwner: "global",
-      linksInBrowser: true,
     });
     expect(drawerProps().onAddTerminalContext).toBeUndefined();
     await act(async () => drawerProps().onSplitTerminal());

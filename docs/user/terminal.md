@@ -9,13 +9,21 @@ does not stop the shell on the previous one. Hide the panel to keep working with
 ending its sessions. The global panel supports the same new terminals, horizontal
 and vertical splits, terminal switching, resizing, shortcuts, and copy/paste menus
 as chat terminals. Its layout is saved separately for each environment. Closing a
-terminal stops that shell; hiding the panel does not. Use **Restart shell** to
+terminal stops that shell; hiding the panel does not. Use the restart control to
 restart only the selected shell.
 
 The global shell starts in the environment server's working directory and does
 not follow the active project's directory. Use `cd` to change directories. It
 survives navigation and client reconnects while the environment server remains
 running, but does not survive that server restarting or the machine rebooting.
+
+Servers started by global terminals appear in the dock. Select a server to open
+it. For remote localhost links, open a chat in the same environment first: the
+link opens in that environment's server-side browser. If the environment has no
+server-side browser or you do not have preview permission, T3 Code explains what
+is needed instead of opening your computer's localhost. Public links and
+desktop-local server links open in your system browser. You can also set up port
+forwarding and open the forwarded address yourself.
 
 ## Terminal history
 

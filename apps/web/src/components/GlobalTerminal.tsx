@@ -4,6 +4,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { mergeWithDefaultKeybindings } from "@t3tools/shared/keybindings";
 import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { ChevronDownIcon, TerminalSquareIcon } from "lucide-react";
+import { useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
@@ -16,6 +17,10 @@ import {
 } from "../globalTerminalStore";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
 import { cn } from "../lib/utils";
+import { readLocalApi } from "../localApi";
+import { useThreadDiscoveredPorts } from "../portDiscoveryState";
+import { resolveThreadRouteRef } from "../threadRoutes";
+import { previewEnvironment } from "../state/preview";
 import { useServerConfigs } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { terminalEnvironment } from "../state/terminal";
@@ -23,6 +28,7 @@ import { useKnownTerminalSessions } from "../state/terminalSessions";
 import { useAtomCommand } from "../state/use-atom-command";
 import { selectThreadTerminalUiState } from "../terminalUiStateStore";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
+import { openGlobalTerminalLink } from "./preview/openGlobalTerminalLink";
 import { Button } from "./ui/button";
 import { RefreshIcon } from "./ui/refresh-icon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -44,12 +50,19 @@ export function GlobalTerminal() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
   const configs = useServerConfigs();
+  const [hasOpened, setHasOpened] = useState(open);
   const [focusRequestId, setFocusRequestId] = useState(0);
   const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const closing = useRef(new Set<string>());
   const restart = useAtomCommand(terminalEnvironment.restart);
   const close = useAtomCommand(terminalEnvironment.close);
+  const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  const previewThreadRef = useParams({ strict: false, select: resolveThreadRouteRef });
+  const servers = useThreadDiscoveredPorts({
+    environmentId: open ? environmentId : null,
+    threadId: GLOBAL_TERMINAL_OWNER_ID,
+  });
   const canOperateTerminal = useAtomValue(terminalEnvironment.open.permissionAtom(environmentId));
   const config = environmentId === null ? undefined : configs.get(environmentId);
   const cwd = environmentId === null ? undefined : launchDirectories[environmentId];
@@ -79,6 +92,9 @@ export function GlobalTerminal() {
     [config?.keybindings],
   );
   const shortcutOptions = { context: { terminalFocus: true, terminalOpen: true } };
+  const shouldAttach = open || hasOpened;
+
+  if (open && !hasOpened) setHasOpened(true);
 
   useEffect(() => {
     if (!open || environmentId !== null || primaryEnvironmentId === null) return;
@@ -88,6 +104,7 @@ export function GlobalTerminal() {
 
   useEffect(() => {
     if (
+      !shouldAttach ||
       !threadRef ||
       !cwd ||
       !canOperateTerminal ||
@@ -99,11 +116,37 @@ export function GlobalTerminal() {
         .getState()
         .ensureTerminal(threadRef, GLOBAL_TERMINAL_ID, { open: true, active: true });
     markInitialized(threadRef.environmentId);
-  }, [threadRef, cwd, canOperateTerminal, hasLayout, initializedEnvironments, markInitialized]);
+  }, [
+    shouldAttach,
+    threadRef,
+    cwd,
+    canOperateTerminal,
+    hasLayout,
+    initializedEnvironments,
+    markInitialized,
+  ]);
 
   const toggle = () => {
     setOpen(!open);
     setFocusRequestId((current) => current + 1);
+  };
+
+  const openUrl = (url: string) => {
+    if (environmentId === null) return;
+    setError(null);
+    void openGlobalTerminalLink({
+      environmentId,
+      url,
+      previewThreadRef,
+      openPreview,
+      openExternal: async (target) => {
+        const localApi = readLocalApi();
+        if (!localApi) throw new Error("Opening links is unavailable in this browser.");
+        await localApi.shell.openExternal(target);
+      },
+    }).catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : "Could not open the terminal link.");
+    });
   };
 
   const addTerminal = (mode: "new" | "horizontal" | "vertical") => {
@@ -147,11 +190,18 @@ export function GlobalTerminal() {
       !canOperateTerminal
     )
       return;
-    if (!window.confirm("Restart the selected global terminal? Its running commands will stop."))
-      return;
+    const localApi = readLocalApi();
+    if (!localApi) return;
     setRestarting(true);
     setError(null);
     try {
+      if (
+        !(await localApi.dialogs.confirm(
+          "Restart the selected global terminal? Its running commands will stop.",
+          { variant: "destructive" },
+        ))
+      )
+        return;
       const result = await restart({
         environmentId,
         input: {
@@ -165,6 +215,8 @@ export function GlobalTerminal() {
       });
       if (result._tag === "Success") setFocusRequestId((current) => current + 1);
       else setError("Could not restart the global terminal. Check the environment connection.");
+    } catch {
+      setError("Could not restart the global terminal. Check the environment connection.");
     } finally {
       setRestarting(false);
     }
@@ -284,16 +336,34 @@ export function GlobalTerminal() {
             <TooltipPopup>Hide global terminal</TooltipPopup>
           </Tooltip>
         </div>
+        {servers.length > 0 ? (
+          <div
+            aria-label="Global terminal servers"
+            className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-3 py-1"
+          >
+            {servers.map((server) => (
+              <Button
+                key={server.url}
+                variant="ghost"
+                size="sm"
+                onClick={() => openUrl(server.url)}
+              >
+                {server.processName ? `${server.processName} · ` : ""}
+                {server.url}
+              </Button>
+            ))}
+          </div>
+        ) : null}
         {error ? (
           <p role="alert" className="px-3 text-sm text-destructive">
             {error}
           </p>
         ) : null}
-        {threadRef && config && cwd && (initialized || !canOperateTerminal) ? (
+        {shouldAttach && threadRef && config && cwd && (initialized || !canOperateTerminal) ? (
           <ThreadTerminalDrawer
             key={environmentId}
             focusOwner="global"
-            linksInBrowser
+            onOpenUrl={openUrl}
             threadRef={threadRef}
             threadId={GLOBAL_TERMINAL_OWNER_ID}
             cwd={cwd}
